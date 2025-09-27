@@ -1,3 +1,5 @@
+###Script piece that will ping a device and can modify true/false variable based on the desired outcome of the response
+
 import subprocess
 
 def ping_device(host):
