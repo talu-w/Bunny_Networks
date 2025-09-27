@@ -1,0 +1,42 @@
+---
+- name: Configure VLANs and VNIs on Cisco Switches
+  hosts: cisco_devices
+  gather_facts: no
+#Vars will create the nesscacary VLANs and VNI's across the network on IOS-XE and NXOS devices to support VXLAN over IOS-XE/NXOS Infrastructure. 
+  vars:
+    vlans:
+      - vlan_id: 
+        name: 
+      - vlan_id: 
+        name: 
+      - vlan_id: 
+        name: 
+
+    vnis:
+      - vni: 
+        vrf: 
+      - vni: 
+        vrf: 
+      - vni: 
+        vrf: 
+
+  tasks:
+    - name: Create VLANs on Cisco IOS switches
+      when: ansible_network_os == 'ios'
+      cisco.ios.ios_vlan:
+        vlan_id: "{{ item.vlan_id }}"
+        name: "{{ item.name }}"
+        state: present
+      loop: "{{ vlans }}"
+      vars:
+        ansible_network_os: ios
+
+    - name: Create VNIs on Cisco Nexus switches
+      when: ansible_network_os == 'nxos'
+      cisco.nxos.nxos_vni:
+        vni: "{{ item.vni }}"
+        associated_vrf: "{{ item.vrf }}"
+        state: present
+      loop: "{{ vnis }}"
+      vars:
+        ansible_network_os: nxos
