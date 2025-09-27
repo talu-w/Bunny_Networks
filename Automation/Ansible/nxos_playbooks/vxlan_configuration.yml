@@ -1,0 +1,139 @@
+---
+
+### Ansible Playbook: `vxlan_config.yml`
+###Words with # need to be customized per environment
+
+---
+- name: Configure VXLAN on Cisco Nexus Switches
+  hosts: cisco_nexus
+  gather_facts: no
+  connection: local
+
+  tasks:
+    - name: Ensure loopback interface is configured on VTEP-1
+      nxos_interface:
+        interface: loopback1
+        admin_state: up
+        ipv4: #x.x.x.x/32
+      delegate_to: vtep1
+
+    - name: Ensure loopback interface is configured on VTEP-2
+      nxos_interface:
+        interface: loopback1
+        admin_state: up
+        ipv4: #x.x.x.x/32
+      delegate_to: vtep2
+
+    - name: Ensure NVE interface is configured on VTEP-1
+      nxos_vxlan_vtep:
+        nve_intf: nve1
+        source_intf: loopback1
+        host_reachability: bgp
+      delegate_to: vtep1
+
+    - name: Ensure NVE interface is configured on VTEP-2
+      nxos_vxlan_vtep:
+        nve_intf: nve1
+        source_intf: loopback1
+        host_reachability: bgp
+      delegate_to: vtep2
+
+    - name: Ensure VLAN #10 is configured on VTEP-1
+      nxos_vlan:
+        vlan_id: #10
+        name: VXLAN_VLAN_10
+        state: present
+      delegate_to: vtep1
+
+    - name: Ensure VLAN #10 is configured on VTEP-2
+      nxos_vlan:
+        vlan_id: #10
+        name: VXLAN_VLAN_10
+        state: present
+      delegate_to: vtep2
+
+    - name: Configure VXLAN VNI #5000 on VTEP-1
+      nxos_vxlan_vni:
+        vni: #5000
+        state: present
+        mcast_group: #x.x.x.x
+      delegate_to: vtep1
+
+    - name: Configure VXLAN VNI #5000 on VTEP-2
+      nxos_vxlan_vni:
+        vni: 5000
+        state: present
+        mcast_group: #x.x.x.x
+      delegate_to: vtep2
+
+    - name: Configure #Vlan10 interface on VTEP-1
+      nxos_interface:
+        interface: #Vlan10
+        admin_state: up
+        ipv4: #x.x.x.x/24
+        vn_segment: #5000
+        fabric_forwarding_anycast_gateway: true
+      delegate_to: vtep1
+
+    - name: Configure Vlan10 interface on VTEP-2
+      nxos_interface:
+        interface: Vlan10
+        admin_state: up
+        ipv4: #x.x.x.x/24
+        vn_segment: #5000
+        fabric_forwarding_anycast_gateway: true
+      delegate_to: vtep2
+
+    - name: Configure BGP on VTEP-1
+      nxos_bgp:
+        as_number: #65000
+        router_id: #x.x.x.x
+      delegate_to: vtep1
+
+    - name: Configure BGP on VTEP-2
+      nxos_bgp:
+        as_number: #65000
+        router_id: #x.x.x.x
+      delegate_to: vtep2
+
+    - name: Configure BGP neighbor on VTEP-1
+      nxos_bgp_neighbor:
+        as_number: #65000
+        neighbor_address: #x.x.x.x
+        remote_as: #65000
+        update_source: loopback1
+        state: present
+      delegate_to: vtep1
+
+    - name: Configure BGP neighbor on VTEP-2
+      nxos_bgp_neighbor:
+        as_number: #65000
+        neighbor_address: x.x.x.x
+        remote_as: #65000
+        update_source: loopback1
+        state: present
+      delegate_to: vtep2
+
+    - name: Ensure BGP EVPN address family is configured on VTEP-1
+      nxos_bgp_af:
+        as_number: #65000
+        afi: l2vpn
+        safi: evpn
+        neighbor_address: x.x.x.x
+        activate: true
+      delegate_to: vtep1
+
+    - name: Ensure BGP EVPN address family is configured on VTEP-2
+      nxos_bgp_af:
+        as_number: #65000
+        afi: l2vpn
+        safi: evpn
+        neighbor_address: x.x.x.x
+        activate: true
+      delegate_to: vtep2
+
+
+
+
+
+#This playbook will configure the VXLAN settings on VTEP devices as specified.
