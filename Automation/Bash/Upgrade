@@ -1,7 +1,0 @@
-#Just a simple bash script to upgrade/update all apps on Ubuntu
-
-#!/bin/bash
-set -e
-sudo apt-get update
-sudo apt-get upgrade
-sudo apt-get dist-upgrade
