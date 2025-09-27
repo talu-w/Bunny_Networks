@@ -1,0 +1,32 @@
+---
+
+#Basic Inventory File structured by YAML where playbooks get their reference for their Hosts/Vars outside of Playbooks.
+
+my_ios_xe_hosts:
+  hosts:
+    my_host_01:
+      ansible_host: 192.168.1.1
+    my_host_02:
+      cisco_ios_xe.com:
+    my_host_03:
+      ansible_host: 192.168.1.2
+      ansible_user: username
+      ansible_port: 443
+  vars:
+    ansible_connection: networkcli
+    ansible_os: IOS
+
+my_nxos_hosts:
+  hosts:
+    my_host_01:
+      ansible_host: 192.168.84.2.1
+    my_host_02:
+      cisco_nxos.com:
+    my_host_03:
+      ansible_host: 192.168.84.2.2
+      ansible_user: username
+      ansible_port: 443
+  vars:
+    ansible_connection: httpapi #Use's the HTTPAPI that can be configured on NXOS devices. Can be changed to network CLI for SSH operations
+    ansible_os: nxos
+ 

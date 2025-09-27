@@ -1,0 +1,17 @@
+###Create a Python Virtual Env that's already up-to-date and contains some basic Network Automation modules (Add/Take away what needed)
+
+sudo apt update
+sudo apt install python3
+/usr/bin/env python
+sudo apt install python3-venv python3-pip
+cd ~
+mkdir MyPythonVirtualEnv
+cd MyPythonVirtualEnv
+python -m venv myvirtualPythonenv #Can re-name your env here
+cd myvirtualPythonenv
+source bin/activate
+python3 -m pip install netmiko #Paramiko on Easy mode
+python -m pip install requests #Make API calls and work with the responses
+python -m pip install napalm #Network Automation API used to simplify Network Automation Processes
+python -m pip install NCClient #Work with Netconf to pass configurations of Network Devices
+python -m pip install Genie #Allows for backups and configuration comparison of previous backups/current config for troubleshooting.
