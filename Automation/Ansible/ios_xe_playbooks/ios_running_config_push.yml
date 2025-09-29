@@ -7,7 +7,7 @@
   vars: 
     ansible_network_os: ios
     ansible_connection: network_cli
-    running_config_pwd: 
+    running_config_pwd: "Your/PWD/HEre"
 
 ###The following will push Cataylst configurations as running-configs to selected devices
 
