@@ -1,0 +1,20 @@
+---
+
+- Name: Cisco IOS-XE configuration push
+  Hosts: 
+  gather_facts: false
+  serial: 
+  vars: 
+    ansible_network_os: ios
+    ansible_connection: network_cli
+    running_config_pwd: 
+
+###The following will push Cataylst configurations as running-configs to selected devices
+
+  - name: IOS Device reachability
+    ios_facts:
+      gather_subset: all
+	  
+  - name: Push config to switch
+    ios_config:
+	    src: "{{ running_config_pwd }}"
