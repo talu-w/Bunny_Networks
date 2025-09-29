@@ -1,20 +1,13 @@
 ---
 
 - Name: Cisco IOS-XE Cataylst running-configuration back-up
-  Hosts: 
+  Hosts: my_ios_hosts
   gather_facts: false
   serial: 
-  vars: 
-    ansible_network_os: ios
-    ansible_connection: network_cli
-	
-	
-	
-  tasks:
 
 ###The following will save a running config of a Cataylst switch to a PWD variable it pulls from the inventory.
 ###creating a new folder of the current date
-
+  tasks:
   - name: Get date/time
     setup:
       filter: "ansible_date_time"
