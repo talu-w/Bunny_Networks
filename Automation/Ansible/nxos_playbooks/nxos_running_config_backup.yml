@@ -1,4 +1,5 @@
 ---
+
 - name: NXOS running-config backup
   hosts: my_nxos_hosts
   gather_facts: false
@@ -8,21 +9,22 @@
 
   - name: Get date/time
     setup:
-	  filter: "ansible_date_time"
-	  gather_subset:
-	run_once: true
+      filter: "ansible_date_time"
+      gather_subset:
+    run_once: true
 	
-  - name: Set DTG fact
+  - name: Set date/time fact
     set_fact:
-	  DTG: "{{ ansible_date_time }}"
-	  state: directory
+      DTG: "{{ ansible_date_time }}"
+    state: directory
+    
   - name: Save runfig to PWD
     nxos_config:
-	 backup:yes
-	 backup_options:
-	  filename: "{{ file_path }}{{ DTG }}/{{ ansible_net_hostname }}.cfg"
-	register: backup_result
+      backup: yes
+      backup_options:
+        filename: "{{ file_path }}{{ DTG }}/{{ ansible_net_hostname }}.cfg"
+    register: backup_result
 	
   - name: Display backup location
     ansible.builtin.debug:
-	 msg: "Running config {{ ansible_net_hostname }}.cfg has been saved too {{ backup_result.backup.path }}"
+      msg: "Running config {{ ansible_net_hostname }}.cfg has been saved too {{ backup_result.backup.path }}"
