@@ -30,3 +30,8 @@ my_nxos_hosts:
     ansible_connection: httpapi #Use's the HTTPAPI that can be configured on NXOS devices. Can be changed to network CLI for SSH operations
     ansible_os: nxos
  
+my_collection_hosts:
+  my_ios_xe_hosts:
+  my_nxos_hosts:
+  vars:
+    running_configuration_save_path: "Your/PWD/Here"
