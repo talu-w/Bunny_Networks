@@ -1,0 +1,43 @@
+---
+
+- Name: Cisco IOS-XE Cataylst running-configuration back-up
+  Hosts: 
+  gather_facts: false
+  serial: 
+  vars: 
+    ansible_network_os: ios
+    ansible_connection: network_cli
+	
+	
+	
+  tasks:
+
+###The following will save a running config of a Cataylst switch to a DIR specified while
+###creating a new folder of the current date
+
+  - name: Get date/time
+    setup:
+      filter: "ansible_date_time"
+    gather_subset:
+      run_once: true
+	
+  - name: Set date/time variable 
+    set_fact:
+      DTG: "{{ ansible_date_time }}"
+    run_once: true
+	
+  - name: Create DIR
+    file:
+      path: "{{ file_path }}{{ DTG }}"
+      state: directory
+    run_once: true
+	
+  - name: IOS Device Reachable
+    ios_facts:
+      gather_subset: all
+	  
+  - name: Back-up config
+    ios_config:
+      backup: yes
+      backup_options:
+        filename: "{{ file_path }}{{ DTG}}/{{ ansible_net_hostname }}.cfg"
