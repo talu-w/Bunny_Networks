@@ -12,7 +12,7 @@
 	
   tasks:
 
-###The following will save a running config of a Cataylst switch to a DIR specified while
+###The following will save a running config of a Cataylst switch to a PWD variable it pulls from the inventory.
 ###creating a new folder of the current date
 
   - name: Get date/time
@@ -28,7 +28,7 @@
 	
   - name: Create DIR
     file:
-      path: "{{ file_path }}{{ DTG }}"
+      path: "{{ running_configuration_save_path }}{{ DTG }}"
       state: directory
     run_once: true
 	
@@ -40,4 +40,4 @@
     ios_config:
       backup: yes
       backup_options:
-        filename: "{{ file_path }}{{ DTG}}/{{ ansible_net_hostname }}.cfg"
+        filename: "{{ running_configuration_save_path }}{{ DTG}}/{{ ansible_net_hostname }}.cfg"
