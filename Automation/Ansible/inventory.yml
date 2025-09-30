@@ -1,7 +1,6 @@
 ---
 
 #Basic Inventory File structured by YAML where playbooks get their reference for their Hosts/Vars outside of Playbooks.
-
 my_ios_xe_hosts:
   hosts:
     my_host_01:
@@ -31,7 +30,8 @@ my_nxos_hosts:
     ansible_os: nxos
  
 my_collection_hosts:
-  my_ios_xe_hosts:
-  my_nxos_hosts:
+  children:
+    - my_ios_xe_hosts
+    - my_nxos_hosts
   vars:
     running_configuration_save_path: "Your/PWD/Here"
