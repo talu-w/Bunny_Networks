@@ -2,3 +2,4 @@
 - 📫 How to reach me talu.whitley@gmail.com
 - 😄 Pronouns: She/Her
 - ⚡ Fun fact: Jumped from planes and kicked doors for the U.S Army: Long Live the Figthers_82nd All the Way !!!!! AIRBORNE !!!!!
+- 🐇 Fun fact2: I also take care of rescue rabbits and think bunnies are pretty cool over-all ;) ! 
