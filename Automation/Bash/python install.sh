@@ -13,7 +13,7 @@ python -m venv myvirtualPythonenv #Can re-name your env here
 cd myvirtualPythonenv
 source bin/activate
 python3 -m pip install netmiko #Paramiko on Easy mode
-python -m pip install requests #Make API calls and work with the responses
-python -m pip install napalm #Network Automation API used to simplify Network Automation Processes
-python -m pip install NCClient #Work with Netconf to pass configurations of Network Devices
-python -m pip install Genie #Allows for backups and configuration comparison of previous backups/current config for troubleshooting.
+python3 -m pip install requests #Make API calls and work with the responses
+python3 -m pip install napalm #Network Automation API used to simplify Network Automation Processes
+python3 -m pip install NCClient #Work with Netconf to pass configurations of Network Devices
+python3 -m pip install Genie #Allows for backups and configuration comparison of previous backups/current config for troubleshooting.
