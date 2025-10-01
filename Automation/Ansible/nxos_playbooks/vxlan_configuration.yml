@@ -1,13 +1,10 @@
 ---
-
-### Ansible Playbook: `vxlan_config.yml`
-###Words with # need to be customized per environment
-
----
 - name: Configure VXLAN on Cisco Nexus Switches
   hosts: cisco_nexus
   gather_facts: no
   connection: local
+
+#This playbook will configure the VXLAN settings on VTEP devices as specified.
 
   tasks:
     - name: Ensure loopback interface is configured on VTEP-1
@@ -61,7 +58,7 @@
 
     - name: Configure VXLAN VNI #5000 on VTEP-2
       nxos_vxlan_vni:
-        vni: 5000
+        vni: #5000
         state: present
         mcast_group: #x.x.x.x
       delegate_to: vtep2
@@ -136,4 +133,3 @@
 
 
 
-#This playbook will configure the VXLAN settings on VTEP devices as specified.
