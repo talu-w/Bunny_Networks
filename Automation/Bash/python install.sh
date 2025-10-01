@@ -1,4 +1,6 @@
 ###Create a Python Virtual Env that's already up-to-date and contains some basic Network Automation modules (Add/Take away what needed)
+###If you're a network engineer and new to automation, this will help you get started!
+###Good luck!!!
 
 sudo apt update
 sudo apt install python3
