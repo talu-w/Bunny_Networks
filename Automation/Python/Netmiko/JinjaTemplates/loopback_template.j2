@@ -1,8 +1,0 @@
-interface loopback {{ LOOPBACK.interface }}
-  description {{ LOOPBACK.description }}
-{% for network in LOOPBACK.networks %}
-  ip address {{ network.network }} {{ network.wildcard }}
-{% if network.enabled is defined %}
-  no shut
-{% endif %}
-{% endfor %}
