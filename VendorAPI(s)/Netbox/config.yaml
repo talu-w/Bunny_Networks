@@ -1,0 +1,13 @@
+---
+
+inventory:
+    plugin: NetBoxInventory2
+    options:
+        nb_url: "http://172.16.6.133:8000"
+        nb_token: "8cc99a6ffbf61e62166c3970fecd977fbc9c3613"
+        ssl_verify: false
+
+runner: 
+    plugin: threaded
+    options:
+        num_workers: 10

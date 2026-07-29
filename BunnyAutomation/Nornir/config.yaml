@@ -1,0 +1,14 @@
+---
+
+inventory: 
+    plugin: SimpleInventory #Can use Netbox and Ansible
+    options:
+        host_file: "hosts.yaml" #If DIR not specified, will use file name within same DIR. Set in order of Nornir look-up
+        group_file: "groups.yaml"
+        defaults_file: "defaults.yaml"
+
+
+runner:
+   plugin: threaded #Serial will not use concurrent
+   options:
+      num_workers: 4 #How many threads will work with devices
