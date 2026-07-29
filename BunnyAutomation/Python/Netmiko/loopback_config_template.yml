@@ -1,0 +1,9 @@
+---
+
+LOOPBACK:
+  interface: "83"
+  description: "This was created using a Jinja template"
+  networks:
+     - network: "83.83.83.83"
+       wildcard: "255.255.255.255"
+       enabled: True
