@@ -1,6 +1,5 @@
 ---
 
-
 '''Hosts file that define Vars for Individual hosts. Use Groups file if one VAR can be applied to mulitple units'''
 
 # myAccessSwitch:
