@@ -1,10 +1,21 @@
 ---
+<<<<<<< HEAD
 
 
 '''Hosts file that define Vars for Individual hosts. Use Groups file if one VAR can be applied to mulitple units'''
 
 # myAccessSwitch:
 #     hostname: "switchitup.org"
+=======
+#Hosts file that define Vars for Individual hosts. Use Groups file if one VAR can be applied to mulitple units
+devnet_box_switch:
+    hostname: "devnetsandboxiosxec9k.cisco.com"
+    platform: #ios, 
+    groups:
+        - cisco_testing
+# dist-sw01:
+#     hostname: "10.10.20.177"
+>>>>>>> 8943b4308308a0539e83cbe7176ca84694c18a0b
 #     groups: 
 #         - access_switches
 #         - user
