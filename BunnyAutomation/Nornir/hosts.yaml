@@ -2,6 +2,7 @@
 #Hosts file that define Vars for Individual hosts. Use Groups file if one VAR can be applied to mulitple units
 devnet_box_switch:
     hostname: "devnetsandboxiosxec9k.cisco.com"
+    platform: #ios, 
     groups:
         - cisco_testing
 # dist-sw01:
