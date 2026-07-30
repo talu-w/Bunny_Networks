@@ -1,4 +1,4 @@
 ---
 #Default file for "default" VARs that will be applied to ALL devices
 
-platform: iosxe #Assigning the default value of platform NXOS
+vendor: Cisco #Assigning the default value of platform NXOS

@@ -1,16 +1,16 @@
 ---
-#Hosts file that define Vars for Individual hosts. Use Groups file if one VAR can be applied to mulitple units
-devnet_box_switch:
-    hostname: "devnetsandboxiosxec9k.cisco.com"
-    groups:
-        - cisco_testing
-# dist-sw01:
-#     hostname: "10.10.20.177"
+
+
+'''Hosts file that define Vars for Individual hosts. Use Groups file if one VAR can be applied to mulitple units'''
+
+# myAccessSwitch:
+#     hostname: "switchitup.org"
 #     groups: 
-#         - us_east
-#         - cisco_group
-# dist-sw02:
-#     hostname: "10.10.20.178"
+#         - access_switches
+#         - user
+
+# myRouterUpstream:
+#     hostname: "10.10.10.10"
 #     groups: 
-#         - us_west
-#         - cisco_group
+#         - cisco_iosxe
+#         - routers
