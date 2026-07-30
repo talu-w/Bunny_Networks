@@ -1,19 +1,29 @@
-'''Basic Nornir job that goes through Netbox as your inventory including filter parameters'''
+'''Basic Nornir job that goes through Netbox inventory including filter parameters
+   Note: You can also apply filter parameters to the config.yaml as needed.'''
 
 from nornir import InitNornir
 from rich import print as rprint
+import json
 
 nr = InitNornir(config_file="config.yaml") #Initialize Nornir
 
-def randomtest(task):
-    rprint(f"Hell, my name is {task.host}") #Print Host/Name from Netbox of object
-    rprint(f"My Ip Address/Hostname is {task.host.hostname}") #Print IP or Hostname within field of Object
-    rprint(f"My platform is {task.host.platform}") #Print Platform field of object
+def pullinfonetbox(task): #First function will display the objects within Netbox. Displaying host, hostname(IP), platform and all their respective data.
+    host = task.host
+    rprint(f"This host is {host}")
+    rprint(f"The host name is {host.hostname}")
+    rprint(f"The platform is {host.platform}")   
+    rprint(json.dumps(host.data, indent=4))
+nr.run(task=pullinfonetbox)
 
+def filterplatform(tasktwo): #Second function will apply a filter prior to going through objects.
+    host = tasktwo.host
+    rprint(host)
+ios_filter = nr.filter(platform="ios")
+ios_filter.run(task=filterplatform)
 
-
-
-nr.run(task=randomtest) #Runs the function above
-
-#ios_filter = nr.filter(platform="ios") #Will filter platform from ansible
-#ios_filter.run(task=randomtest) #Run the function with the filter applied
+def filterinfunc(taskthree): #Third function will filter through the data post-gather. In host.get, apply the Netbox API Parameters
+    host = taskthree.host
+    for gettags in host.get("tags",[]):
+       if gettags['id'] == 23:
+          print(host.hostname)
+nr.run(task=filterinfunc)
