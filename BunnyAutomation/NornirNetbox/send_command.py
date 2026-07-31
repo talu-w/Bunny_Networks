@@ -19,30 +19,6 @@ from nornir_utils.plugins.functions import print_result
 
 USERNETWORKCOMMAND = input('Please input the network command:')
 
-def normalize_tag_slugs(tags: list[Any]) -> list[str]:
-    """Return normalized tag slugs from NetBox inventory data."""
-
-    normalized: list[str] = []
-
-    for tag in tags:
-        if isinstance(tag, str):
-            value = tag
-
-        elif isinstance(tag, dict):
-            value = tag.get("slug") or tag.get("name")
-
-        else:
-            value = (
-                getattr(tag, "slug", None)
-                or getattr(tag, "name", None)
-            )
-
-        if value:
-            normalized.append(str(value).casefold())
-
-    return normalized
-
-
 def main() -> int:
     
     username = os.getenv("NORNIR_USERNAME")
@@ -88,16 +64,33 @@ def main() -> int:
             f"platform={host.platform}, "
             f"tags={host.data['tag_slugs']}"
         )
-    #Use's netmiko to send a command
-    results = testing_devices.run(
-        name=f"Sending command {USERNETWORKCOMMAND} to {host.name}",
-        task=send_command,
-    )
-
+    #Calls upon the send_command function to use Netmiko
+    results = testing_devices.run(task=send_command)
     print_result(results)
-
     return 2 if results.failed_hosts else 0
 
+def normalize_tag_slugs(tags: list[Any]) -> list[str]:
+    """Return normalized tag slugs from NetBox inventory data."""
+
+    normalized: list[str] = []
+
+    for tag in tags:
+        if isinstance(tag, str):
+            value = tag
+
+        elif isinstance(tag, dict):
+            value = tag.get("slug") or tag.get("name")
+
+        else:
+            value = (
+                getattr(tag, "slug", None)
+                or getattr(tag, "name", None)
+            )
+
+        if value:
+            normalized.append(str(value).casefold())
+
+    return normalized
 
 def send_command(task: Task):
     result = task.run(
