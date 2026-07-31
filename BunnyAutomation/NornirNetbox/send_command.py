@@ -1,11 +1,10 @@
 '''This script will go through Netbox and filter out devices based on a unique "tag/tags" object then send a command(s) to those devices while providing output'''
 
 '''Features to be added:
-   1.) Type the command you want to see
-   2.) Send Multiple commands
-   3.) Pick devices based on unique objects
-   4.) Connect to multiple devices to send commands all at once
-   5.) Save the output from Multiple devices into a Dir/Repo for logging'''
+   1.) Send Multiple commands
+   2.) Pick devices based on unique objects
+   3.) Connect to multiple devices to send commands all at once
+   4.) Save the output from Multiple devices into a Dir/Repo for logging'''
 
 import os
 import sys
