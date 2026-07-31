@@ -13,9 +13,11 @@ from typing import Any
 
 from nornir import InitNornir
 from nornir.core.filter import F
+from nornir.core.task import Task
 from nornir_netmiko.tasks import netmiko_send_command
 from nornir_utils.plugins.functions import print_result
 
+USERNETWORKCOMMAND = input('Please input the network command:')
 
 def normalize_tag_slugs(tags: list[Any]) -> list[str]:
     """Return normalized tag slugs from NetBox inventory data."""
@@ -88,15 +90,24 @@ def main() -> int:
         )
     #Use's netmiko to send a command
     results = testing_devices.run(
-        name="Collect show version",
-        task=netmiko_send_command,
-        command_string="show version",
+        name=f"Sending command {USERNETWORKCOMMAND} to {host.name}",
+        task=send_command,
     )
 
     print_result(results)
 
     return 2 if results.failed_hosts else 0
 
+
+def send_command(task: Task):
+    result = task.run(
+        task=netmiko_send_command,
+        command_string=USERNETWORKCOMMAND,
+        name=f"Sending '{USERNETWORKCOMMAND}' to {task.host.name}",
+    )
+
+    print(f"\n========== {task.host.name} ==========\n")
+    print(result.result)
 
 if __name__ == "__main__":
     sys.exit(main())
