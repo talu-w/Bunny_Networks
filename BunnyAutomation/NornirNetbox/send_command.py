@@ -1,4 +1,11 @@
-#!/usr/bin/env python3
+'''This script will go through Netbox and filter out devices based on a unique "tag/tags" object then send a command(s) to those devices while providing output'''
+
+'''Features to be added:
+   1.) Type the command you want to see
+   2.) Send Multiple commands
+   3.) Pick devices based on unique objects
+   4.) Connect to multiple devices to send commands all at once
+   5.) Save the output from Multiple devices into a Dir/Repo for logging'''
 
 import os
 import sys
@@ -35,10 +42,25 @@ def normalize_tag_slugs(tags: list[Any]) -> list[str]:
 
 
 def main() -> int:
-    nr = InitNornir(config_file="config.yaml")
+    
+    username = os.getenv("NORNIR_USERNAME")
+    password = os.getenv("NORNIR_PASSWORD")
 
-    nr.inventory.defaults.username = ""
-    nr.inventory.defaults.password = ""
+    if not username or not password:
+        print(
+            "ERROR: NORNIR_USERNAME and NORNIR_PASSWORD "
+            "must be set in the environment."
+        )
+        return 1
+
+    try:
+        nr = InitNornir(config_file="config.yaml")
+    except Exception as exc:
+        print(f"ERROR: Could not initialize Nornir/NetBox inventory: {exc}")
+        return 1
+    
+    nr.inventory.defaults.username = username
+    nr.inventory.defaults.password = password
 
     # Prepare NetBox tag data for Nornir F filtering.
     for host in nr.inventory.hosts.values():
@@ -64,11 +86,11 @@ def main() -> int:
             f"platform={host.platform}, "
             f"tags={host.data['tag_slugs']}"
         )
-
+    #Use's netmiko to send a command
     results = testing_devices.run(
-        name="Sending command", #
-        task=netmiko_send_command, #
-        command_string="",  #
+        name="Collect show version",
+        task=netmiko_send_command,
+        command_string="show version",
     )
 
     print_result(results)
