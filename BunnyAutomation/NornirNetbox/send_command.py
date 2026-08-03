@@ -46,13 +46,14 @@ def main() -> int:
             host.data.get("tags", [])
         )
 
-        #This allows connections to legacy SSH-Devices as they take longer to respond.
+        #Connection options - Configured currently for connecting to legacy SSH/slower devices.
+        #Applied to all the objects that are pulled above from nr.inventory.hosts
         host.connection_options["netmiko"] = ConnectionOptions(extras= {"conn_timeout": 30,
                                                                         "banner_timeout": 60,
                                                                         "auth_timeout": 60,
                                                                         "fast_cli": False})
 
-    # Local Nornir inventory filtering.
+    #Local Nornir inventory filtering.
     testing_devices = nr.filter(
         F(tag_slugs__contains="nornirtest")
     )
