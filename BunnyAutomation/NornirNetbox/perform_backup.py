@@ -23,7 +23,7 @@ from nornir.core.inventory import ConnectionOptions
 
 
 TARGET_TAG = "nornirtest"  #Tag used on Objects within Netbox.
-BACKUP_ROOT = Path("/networkbackups")  # Root directory for configuration backups
+BACKUP_ROOT = Path("./config_backups")  #Dir path for configuration backups
 
 
 def main() -> None:
@@ -123,7 +123,7 @@ def main() -> None:
     results = targets.run(
         name="Back up Cisco running configurations",
         task=save_running_config,
-        output_dir=BACKUP_ROOT,
+        output_dir=dated_output_dir,
     )
 
     # This is essential while troubleshooting.
@@ -135,9 +135,12 @@ def main() -> None:
         if host_name in results.failed_hosts:
             print(f"[FAILED] {host_name}")
         else:
-            expected_file = BACKUP_ROOT / f"{host_name}.txt"
-            print(f"[SAVED]  {host_name}: {expected_file.resolve()}")
-
+            expected_file = (
+                dated_output_dir
+                / host_name
+                / f"{host_name}.cfg"
+            )
+            print(f"[SAVED] {host_name}: {expected_file.resolve}")
     if results.failed_hosts:
         print(
             "\nFailed devices:",
@@ -175,7 +178,6 @@ def normalize_tags(tags: list[Any]) -> list[str]:
                 normalized.append(str(value).casefold())
 
     return list(set(normalized))
-
 
 def save_running_config(task: Task, output_dir: Path) -> Result:
     #Retrieve and save Network devices running configuration
@@ -216,12 +218,19 @@ def save_running_config(task: Task, output_dir: Path) -> Result:
         )
 
     filename = output_dir / f"{task.host.name}.txt"
-    #Writes the config to a VAR
-    try:
+
+    #Writes the config the specified directory
+    host_backup_dir = output_dir / task.host.name
+    filename = host_backup_dir / f"{task.host.name}.cfg"
+    try: 
+        host_backup_dir.mkdir(
+            parents=True,
+            exist_ok=True,)
+        
         filename.write_text(
             configuration.rstrip() + "\n",
-            encoding="utf-8",
-        )
+            encoding="utf-8")
+        
     except OSError as exc:
         return Result(
             host=task.host,
