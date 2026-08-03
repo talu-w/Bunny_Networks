@@ -9,6 +9,7 @@ Features in work:
 '''
 
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +23,7 @@ from nornir.core.inventory import ConnectionOptions
 
 
 TARGET_TAG = "nornirtest"  #Tag used on Objects within Netbox.
-OUTPUT_DIR = Path("./config_backups") #Save's configs to specified DIR
+BACKUP_ROOT = Path("/networkbackups")  # Root directory for configuration backups
 
 
 def main() -> None:
@@ -99,20 +100,30 @@ def main() -> None:
         )
         return
 
-    #Create's the Directory
-    OUTPUT_DIR.mkdir(
+    # Build the dated backup directory once for the entire backup run.
+    # Result: /networkbackups/<year>/<month>/<day>/
+    backup_date = datetime.now()
+
+    dated_output_dir = (
+        BACKUP_ROOT
+        / backup_date.strftime("%Y")
+        / backup_date.strftime("%m")
+        / backup_date.strftime("%d")
+    )
+
+    dated_output_dir.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    print(f"\nOutput directory: {OUTPUT_DIR.resolve()}")
+    print(f"\nOutput directory: {dated_output_dir.resolve()}")
     print("\n--- Starting configuration backups ---")
 
     #Call's upon the save_running_config Function to collect the running-config from the deivces filtered from Netbox
     results = targets.run(
         name="Back up Cisco running configurations",
         task=save_running_config,
-        output_dir=OUTPUT_DIR,
+        output_dir=BACKUP_ROOT,
     )
 
     # This is essential while troubleshooting.
@@ -124,7 +135,7 @@ def main() -> None:
         if host_name in results.failed_hosts:
             print(f"[FAILED] {host_name}")
         else:
-            expected_file = OUTPUT_DIR / f"{host_name}.txt"
+            expected_file = BACKUP_ROOT / f"{host_name}.txt"
             print(f"[SAVED]  {host_name}: {expected_file.resolve()}")
 
     if results.failed_hosts:
