@@ -5,6 +5,7 @@ Features in work:
  1.) Save to Netbox
  2.) Pipeline to save to a GitRepo
  3.) Filter based on multiple set parameters
+ 4.) Back up based on Hostname -> Date -> Config/Interface stats?/Health-Status
 '''
 
 import os
@@ -16,6 +17,8 @@ from nornir.core.filter import F
 from nornir.core.task import Result, Task
 from nornir_netmiko.tasks import netmiko_send_command
 from nornir_utils.plugins.functions import print_result
+from nornir.core.inventory import ConnectionOptions
+
 
 
 TARGET_TAG = "nornirtest"  #Tag used on Objects within Netbox.
@@ -70,7 +73,11 @@ def main() -> None:
             f"raw_tags={raw_tags!r}, "
             f"normalized_tags={normalized_tags!r}"
         )
-
+                #This allows connections to legacy SSH-Devices as they take longer to respond.
+        host.connection_options["netmiko"] = ConnectionOptions(extras= {"conn_timeout": 30,
+                                                                        "banner_timeout": 60,
+                                                                        "auth_timeout": 60,
+                                                                        "fast_cli": False})
     #Performs a filter against Netbox's Inventory; using the TARGET_TAG to filter devices based on 'tags'
     targets = nr.filter(
         F(tag_slugs__contains=TARGET_TAG.casefold())
