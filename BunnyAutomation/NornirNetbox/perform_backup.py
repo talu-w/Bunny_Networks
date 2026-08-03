@@ -73,11 +73,14 @@ def main() -> None:
             f"raw_tags={raw_tags!r}, "
             f"normalized_tags={normalized_tags!r}"
         )
-                #This allows connections to legacy SSH-Devices as they take longer to respond.
+
+        #Connection options - Configured currently for connecting to legacy SSH/slower devices.
+        #Applied to all the objects that are pulled above from nr.inventory.hosts
         host.connection_options["netmiko"] = ConnectionOptions(extras= {"conn_timeout": 30,
                                                                         "banner_timeout": 60,
                                                                         "auth_timeout": 60,
                                                                         "fast_cli": False})
+
     #Performs a filter against Netbox's Inventory; using the TARGET_TAG to filter devices based on 'tags'
     targets = nr.filter(
         F(tag_slugs__contains=TARGET_TAG.casefold())
