@@ -119,12 +119,13 @@ def main() -> None:
     print(f"\nOutput directory: {dated_output_dir.resolve()}")
     print("\n--- Starting configuration backups ---")
 
-    #Call's upon the save_running_config Function to collect the running-config from the deivces filtered from Netbox
+    # Collect the running configuration and environment output
+    # from each device filtered from NetBox.
     results = targets.run(
-        name="Back up Cisco running configurations",
-        task=save_running_config,
+        name="Back up Cisco running configurations and environment",
+        task=save_device_outputs,
         output_dir=dated_output_dir,
-    )
+        )
 
     # This is essential while troubleshooting.
     print_result(results)
@@ -133,19 +134,22 @@ def main() -> None:
 
     for host_name in targets.inventory.hosts:
         if host_name in results.failed_hosts:
-            print(f"[FAILED] {host_name}")
+          print(f"[FAILED] {host_name}")
         else:
-            expected_file = (
+            config_file = (
                 dated_output_dir
                 / host_name
-                / f"{host_name}.cfg"
-            )
-            print(f"[SAVED] {host_name}: {expected_file.resolve}")
-    if results.failed_hosts:
-        print(
-            "\nFailed devices:",
-            ", ".join(results.failed_hosts),
-        )
+                / f"{host_name}.cfg")
+
+            environment_file = (
+                dated_output_dir
+                / host_name
+                / f"{host_name}_environment.txt")
+
+            print(f"[SAVED] {host_name}")
+            print(f"        Config:      {config_file.resolve()}")
+            print(f"        Environment: {environment_file.resolve()}")
+
 
 def normalize_tags(tags: list[Any]) -> list[str]:
     
@@ -179,72 +183,125 @@ def normalize_tags(tags: list[Any]) -> list[str]:
 
     return list(set(normalized))
 
-def save_running_config(task: Task, output_dir: Path) -> Result:
-    #Retrieve and save Network devices running configuration
+def save_device_outputs(task: Task, output_dir: Path) -> Result:
+    """
+    Retrieve and save the running configuration and environment
+    information for a single network device.
+    """
+
     print(
         f"[{task.host.name}] Connecting to "
         f"{task.host.hostname} using platform {task.host.platform!r}"
     )
 
-    #Use's Netmiko-Sub-Module to connect to device
-    command_results = task.run(
+    # Retrieve the running configuration.
+    running_config_results = task.run(
         name="Get running configuration",
         task=netmiko_send_command,
         command_string="show running-config",
         read_timeout=120,
     )
 
-    #task.run() returns a MultiResult. The Netmiko subtask is its last result.
-    command_result = command_results[-1]
+    running_config_result = running_config_results[-1]
 
-    #Failed to retrieve config
-    if command_result.failed:
+    if running_config_result.failed:
         return Result(
             host=task.host,
             failed=True,
             result=(
-                f"Failed to retrieve running configuration: "
-                f"{command_result.exception or command_result.result}"
+                "Failed to retrieve running configuration: "
+                f"{running_config_result.exception or running_config_result.result}"
             ),
         )
 
-    configuration = str(command_result.result)
-    #If the device provides an empty config or was unable to write for whatever reason.
-    if not configuration.strip():
+    running_config = str(running_config_result.result)
+
+    if not running_config.strip():
         return Result(
             host=task.host,
             failed=True,
-            result="The device returned an empty running configuration or was unable to write. Check to make sure the proper command was passed.",
+            result="The device returned an empty running configuration.",
         )
 
-    filename = output_dir / f"{task.host.name}.txt"
+    # Retrieve the environment information.
+    environment_results = task.run(
+        name="Get environment information",
+        task=netmiko_send_command,
+        command_string="show environment all",
+        read_timeout=120,
+    )
 
-    #Writes the config the specified directory
+    environment_result = environment_results[-1]
+
+    if environment_result.failed:
+        return Result(
+            host=task.host,
+            failed=True,
+            result=(
+                "Failed to retrieve environment information: "
+                f"{environment_result.exception or environment_result.result}"
+            ),
+        )
+
+    environment_output = str(environment_result.result)
+
+    if not environment_output.strip():
+        return Result(
+            host=task.host,
+            failed=True,
+            result="The device returned empty environment information.",
+        )
+
+    # Create the hostname-specific backup directory.
     host_backup_dir = output_dir / task.host.name
-    filename = host_backup_dir / f"{task.host.name}.cfg"
-    try: 
+
+    config_filename = (
+        host_backup_dir
+        / f"{task.host.name}.cfg"
+    )
+
+    environment_filename = (
+        host_backup_dir
+        / f"{task.host.name}_environment.txt"
+    )
+
+    try:
         host_backup_dir.mkdir(
             parents=True,
-            exist_ok=True,)
-        
-        filename.write_text(
-            configuration.rstrip() + "\n",
-            encoding="utf-8")
-        
+            exist_ok=True,
+        )
+
+        config_filename.write_text(
+            running_config.rstrip() + "\n",
+            encoding="utf-8",
+        )
+
+        environment_filename.write_text(
+            environment_output.rstrip() + "\n",
+            encoding="utf-8",
+        )
+
     except OSError as exc:
         return Result(
             host=task.host,
             failed=True,
             exception=exc,
-            result=f"Could not write {filename}: {exc}",
+            result=(
+                f"Could not write backup files for "
+                f"{task.host.name}: {exc}"
+            ),
         )
-    #Returns that VAR as a value 
+
     return Result(
         host=task.host,
         changed=False,
-        result=f"Saved running configuration to {filename.resolve()}",
+        result=(
+            f"Saved running configuration to "
+            f"{config_filename.resolve()}\n"
+            f"Saved environment information to "
+            f"{environment_filename.resolve()}"
+        ),
     )
-
 
 if __name__ == "__main__":
     main()
