@@ -595,7 +595,12 @@ def create_interface_workbook(
 
     for row_number, row in enumerate(rows, start=data_start_row):
         for column, header in enumerate(headers, start=1):
-            interfaces.cell(row_number, column, row[header])
+            value = row[header]
+            interfaces.cell(
+                row_number,
+                column,
+                "N/A" if value is None or value == "" else value,
+            )
 
     if rows:
         table = Table(
