@@ -13,8 +13,10 @@ Output:
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
+import os
 import re
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
@@ -22,6 +24,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
+import pynetbox
 from nornir import InitNornir
 from nornir.core.task import Result, Task
 from nornir_netmiko.tasks import netmiko_send_command
@@ -39,6 +42,9 @@ logging.basicConfig(
 )
 
 LOGGER = logging.getLogger(__name__)
+
+NETBOX_URL_ENV = "NETBOX_URL"
+NETBOX_TOKEN_ENV = "NETBOX_TOKEN"
 
 
 # ---------------------------------------------------------------------------
@@ -678,6 +684,14 @@ def collect_vlan_and_trunk_data(task: Task) -> Result:
         "hostname": task.host.name,
         "management_address": task.host.hostname,
         "platform": task.host.platform,
+        # Prefer an inventory-provided NetBox primary key when available. This
+        # is the safest mapping when a Nornir inventory name is not identical
+        # to the NetBox device name.
+        "netbox_device_id": (
+            task.host.get("netbox_device_id")
+            or task.host.get("device_id")
+        ),
+        "netbox_device_name": task.host.get("netbox_device_name"),
         "collected_at": datetime.now().astimezone().isoformat(),
         "commands": {
             "vlan": SHOW_VLAN_COMMAND,
@@ -803,11 +817,327 @@ def print_device_summary(hostname: str, report: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# NetBox synchronization
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SyncSummary:
+    device: str
+    dry_run: bool
+    updated: int = 0
+    unchanged: int = 0
+    skipped: int = 0
+    errors: list[str] = field(default_factory=list)
+    changes: list[str] = field(default_factory=list)
+
+
+def related_id(value: Any) -> int | None:
+    """Return an object's numeric ID from pynetbox's possible representations."""
+
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, dict):
+        object_id = value.get("id")
+    else:
+        object_id = getattr(value, "id", None)
+    return int(object_id) if object_id is not None else None
+
+
+def related_ids(values: Any) -> list[int]:
+    return sorted(
+        object_id
+        for object_id in (related_id(value) for value in (values or []))
+        if object_id is not None
+    )
+
+
+def choice_value(value: Any) -> str | None:
+    """Normalize pynetbox Choice/dict/string values (such as interface.mode)."""
+
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return value.get("value")
+    return getattr(value, "value", str(value))
+
+
+def interface_signature(interface_name: str) -> tuple[str, int | None, int | None, int | None, int | None]:
+    """Canonical signature used to match short and long Cisco interface names."""
+
+    identity = parse_interface_name(interface_name)
+    return (
+        identity.interface_type.casefold(),
+        identity.stack_member,
+        identity.slot,
+        identity.port,
+        identity.subinterface,
+    )
+
+
+def build_interface_indexes(
+    interfaces: Iterable[Any],
+) -> tuple[dict[str, list[Any]], dict[tuple[Any, ...], list[Any]]]:
+    by_name: dict[str, list[Any]] = defaultdict(list)
+    by_signature: dict[tuple[Any, ...], list[Any]] = defaultdict(list)
+
+    for interface in interfaces:
+        name = str(interface.name).strip()
+        by_name[name.casefold()].append(interface)
+        by_signature[interface_signature(name)].append(interface)
+
+    return dict(by_name), dict(by_signature)
+
+
+def match_interface(
+    discovered_name: str,
+    by_name: dict[str, list[Any]],
+    by_signature: dict[tuple[Any, ...], list[Any]],
+) -> tuple[Any | None, str | None]:
+    """Match only within the already-resolved device; never cross devices."""
+
+    exact = by_name.get(discovered_name.strip().casefold(), [])
+    if len(exact) == 1:
+        return exact[0], None
+    if len(exact) > 1:
+        return None, f"ambiguous exact interface name {discovered_name!r}"
+
+    signature_matches = by_signature.get(interface_signature(discovered_name), [])
+    if len(signature_matches) == 1:
+        return signature_matches[0], None
+    if len(signature_matches) > 1:
+        names = ", ".join(sorted(str(item.name) for item in signature_matches))
+        return None, f"ambiguous canonical match for {discovered_name!r}: {names}"
+    return None, f"interface {discovered_name!r} not found on this device"
+
+
+def resolve_device(nb: Any, report: dict[str, Any]) -> Any:
+    """Resolve a device by inventory PK, then by an explicit/exact name."""
+
+    device_id = report.get("netbox_device_id")
+    if device_id not in (None, ""):
+        device = nb.dcim.devices.get(int(device_id))
+        if device is None:
+            raise LookupError(f"NetBox device ID {device_id} was not found")
+        return device
+
+    name = report.get("netbox_device_name") or report["hostname"]
+    matches = list(nb.dcim.devices.filter(name=name))
+    exact = [item for item in matches if str(item.name).casefold() == str(name).casefold()]
+    if len(exact) != 1:
+        raise LookupError(
+            f"expected one exact NetBox device named {name!r}; found {len(exact)}. "
+            "Set netbox_device_id in Nornir host data to disambiguate."
+        )
+    return exact[0]
+
+
+def vlan_scope_id(vlan: Any) -> int | None:
+    """Support both legacy site-scoped and current generic-scope VLAN records."""
+
+    direct_scope = related_id(getattr(vlan, "scope", None)) or related_id(
+        getattr(vlan, "site", None)
+    )
+    if direct_scope is not None:
+        return direct_scope
+
+    group = getattr(vlan, "group", None)
+    if group is None:
+        return None
+    return related_id(getattr(group, "scope", None)) or related_id(
+        getattr(group, "site", None)
+    )
+
+
+def build_vlan_cache(nb: Any) -> dict[int, list[Any]]:
+    cache: dict[int, list[Any]] = defaultdict(list)
+    for vlan in nb.ipam.vlans.all():
+        cache[int(vlan.vid)].append(vlan)
+    return dict(cache)
+
+
+def resolve_vlan(
+    vlan_cache: dict[int, list[Any]],
+    vlan_id: int,
+    device: Any,
+) -> tuple[Any | None, str | None]:
+    candidates = vlan_cache.get(vlan_id, [])
+    if not candidates:
+        return None, f"VLAN {vlan_id} does not exist in NetBox"
+    if len(candidates) == 1:
+        return candidates[0], None
+
+    site_id = related_id(getattr(device, "site", None))
+    if site_id is not None:
+        scoped = [item for item in candidates if vlan_scope_id(item) == site_id]
+        if len(scoped) == 1:
+            return scoped[0], None
+
+    candidate_ids = ", ".join(str(item.id) for item in candidates)
+    return None, (
+        f"VLAN {vlan_id} is ambiguous for device {device.name!r}; "
+        f"candidate NetBox IDs: {candidate_ids}"
+    )
+
+
+def current_interface_state(interface: Any) -> dict[str, Any]:
+    return {
+        "mode": choice_value(getattr(interface, "mode", None)),
+        "untagged_vlan": related_id(getattr(interface, "untagged_vlan", None)),
+        "tagged_vlans": related_ids(getattr(interface, "tagged_vlans", [])),
+    }
+
+
+def sync_report_to_netbox(
+    nb: Any,
+    report: dict[str, Any],
+    vlan_cache: dict[int, list[Any]],
+    dry_run: bool,
+) -> SyncSummary:
+    """Synchronize one collected device report to its NetBox interfaces."""
+
+    device = resolve_device(nb, report)
+    summary = SyncSummary(device=str(device.name), dry_run=dry_run)
+    interfaces = list(nb.dcim.interfaces.filter(device_id=device.id))
+    by_name, by_signature = build_interface_indexes(interfaces)
+
+    desired_interfaces: list[tuple[str, str, int | None, list[int]]] = []
+    for access in report["access_interfaces"]:
+        desired_interfaces.append(
+            (access["interface"], "access", int(access["vlan_id"]), [])
+        )
+    for trunk in report["trunk_interfaces"]:
+        native_vlan = (
+            int(trunk["native_vlan"])
+            if trunk.get("native_vlan") is not None
+            else None
+        )
+        desired_interfaces.append(
+            (
+                trunk["interface"],
+                "tagged",
+                native_vlan,
+                [
+                    int(vlan_id)
+                    for vlan_id in trunk.get("allowed_vlans", [])
+                    # NetBox represents the native VLAN only as untagged; do
+                    # not also assign it to tagged_vlans.
+                    if int(vlan_id) != native_vlan
+                ],
+            )
+        )
+
+    for discovered_name, mode, untagged_vid, tagged_vids in desired_interfaces:
+        interface, match_error = match_interface(discovered_name, by_name, by_signature)
+        if match_error:
+            summary.skipped += 1
+            summary.errors.append(match_error)
+            continue
+
+        untagged_vlan = None
+        if untagged_vid is not None:
+            untagged_vlan, vlan_error = resolve_vlan(vlan_cache, untagged_vid, device)
+            if vlan_error:
+                summary.skipped += 1
+                summary.errors.append(f"{discovered_name}: {vlan_error}")
+                continue
+
+        tagged_vlan_objects: list[Any] = []
+        tagged_errors: list[str] = []
+        for vlan_id in sorted(set(tagged_vids)):
+            vlan, vlan_error = resolve_vlan(vlan_cache, vlan_id, device)
+            if vlan_error:
+                tagged_errors.append(vlan_error)
+            elif vlan is not None:
+                tagged_vlan_objects.append(vlan)
+
+        if tagged_errors:
+            summary.skipped += 1
+            summary.errors.append(
+                f"{discovered_name}: refusing partial trunk update: "
+                + "; ".join(tagged_errors)
+            )
+            continue
+
+        desired = {
+            "mode": mode,
+            "untagged_vlan": related_id(untagged_vlan),
+            "tagged_vlans": sorted(int(vlan.id) for vlan in tagged_vlan_objects),
+        }
+        current = current_interface_state(interface)
+        if current == desired:
+            summary.unchanged += 1
+            continue
+
+        description = (
+            f"{interface.name}: {current} -> {desired}"
+        )
+        if dry_run:
+            summary.updated += 1
+            summary.changes.append(f"DRY-RUN {description}")
+            continue
+
+        try:
+            interface.update(desired)
+            summary.updated += 1
+            summary.changes.append(description)
+        except Exception as exc:  # report API validation/transport errors per interface
+            summary.errors.append(f"{interface.name}: NetBox update failed: {exc}")
+
+    return summary
+
+
+def print_sync_summary(summary: SyncSummary) -> None:
+    label = "DRY-RUN" if summary.dry_run else "NETBOX"
+    print()
+    print(
+        f"[{label}] {summary.device}: updated={summary.updated} "
+        f"unchanged={summary.unchanged} skipped={summary.skipped} "
+        f"errors={len(summary.errors)}"
+    )
+    for change in summary.changes:
+        print(f"  CHANGE: {change}")
+    for error in summary.errors:
+        print(f"  ERROR: {error}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
-def main() -> None:
-    nr = InitNornir(config_file="config.yaml")
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Collect Cisco interface VLAN state and synchronize it to NetBox."
+    )
+    parser.add_argument("--config", default="config.yaml", help="Nornir config file")
+    parser.add_argument("--netbox-url", default=os.getenv(NETBOX_URL_ENV))
+    parser.add_argument("--netbox-token", default=os.getenv(NETBOX_TOKEN_ENV))
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Read NetBox and show changes without writing them",
+    )
+    parser.add_argument(
+        "--collect-only",
+        action="store_true",
+        help="Create JSON reports without connecting to NetBox",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_arguments()
+    if not args.collect_only and (not args.netbox_url or not args.netbox_token):
+        raise SystemExit(
+            "NetBox synchronization requires --netbox-url/--netbox-token or "
+            f"{NETBOX_URL_ENV}/{NETBOX_TOKEN_ENV}. Use --collect-only to skip it."
+        )
+
+    nr = InitNornir(config_file=args.config)
+    exit_code = 0
 
     try:
         # Apply your existing NetBox/Nornir filter here if needed.
@@ -825,8 +1155,10 @@ def main() -> None:
             name="Collecting VLAN and switch-stack information",
         )
 
+        successful_reports: list[dict[str, Any]] = []
         for hostname, multi_result in results.items():
             if multi_result.failed:
+                exit_code = 1
                 print()
                 print(f"[FAILED] {hostname}")
                 print_result(multi_result)
@@ -840,10 +1172,40 @@ def main() -> None:
                 continue
 
             print_device_summary(hostname, report)
+            successful_reports.append(report)
+
+        if not args.collect_only:
+            nb = pynetbox.api(args.netbox_url, token=args.netbox_token)
+            vlan_cache = build_vlan_cache(nb)
+
+            # Deliberately synchronize sequentially: a pynetbox API/session is
+            # not shared among Nornir worker threads.
+            for report in successful_reports:
+                try:
+                    sync_summary = sync_report_to_netbox(
+                        nb=nb,
+                        report=report,
+                        vlan_cache=vlan_cache,
+                        dry_run=args.dry_run,
+                    )
+                    report["netbox_sync"] = asdict(sync_summary)
+                    save_report(report["hostname"], report)
+                    print_sync_summary(sync_summary)
+                    if sync_summary.errors:
+                        exit_code = 1
+                except Exception as exc:
+                    exit_code = 1
+                    LOGGER.exception(
+                        "NetBox synchronization failed for %s: %s",
+                        report["hostname"],
+                        exc,
+                    )
 
     finally:
         nr.close_connections()
 
+    return exit_code
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
