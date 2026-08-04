@@ -9,6 +9,7 @@ Features in work:
 '''
 
 import os
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -19,21 +20,38 @@ from nornir.core.task import Result, Task
 from nornir_netmiko.tasks import netmiko_send_command
 from nornir_utils.plugins.functions import print_result
 from nornir.core.inventory import ConnectionOptions
+try:
+    from rich.console import Console
+    from rich.markup import escape
+    from rich.progress import (
+        BarColumn,
+        Progress,
+        SpinnerColumn,
+        TaskID,
+        TextColumn,
+        TimeElapsedColumn,
+    )
+except ImportError as exc:
+    raise SystemExit(
+        "ERROR: This script requires Rich. Install it with: pip install rich"
+    ) from exc
 
 
 
 TARGET_TAG = "nornirtest"  #Tag used on Objects within Netbox.
 BACKUP_ROOT = Path("./config_backups")  #Dir path for configuration backups
+PROGRESS_STEPS = 5
+console = Console()
 
 
-def main() -> None:
+def main() -> int:
 
     username = os.getenv("NORNIR_USERNAME") #exports your #USERNAME for logging into Network devices
     password = os.getenv("NORNIR_PASSWORD") #exports your #PASSWORD for logging into Network devices
 
    #Checks to confirm if VARs are present/set
     if not username or not password: 
-        print(
+        console.print(
             "ERROR: NORNIR_USERNAME and NORNIR_PASSWORD "
             "must be set in the environment."
         )
@@ -43,7 +61,9 @@ def main() -> None:
     try:
         nr = InitNornir(config_file="config.yaml") 
     except Exception as exc:
-        print(f"ERROR: Could not initialize Nornir/NetBox inventory: {exc}")
+        console.print(
+            f"[bold red]ERROR:[/] Could not initialize Nornir/NetBox inventory: {exc}"
+        )
         return 1
     
     nr.inventory.defaults.username = username #Set's username as default vaule for logging across all devices
@@ -51,11 +71,11 @@ def main() -> None:
 
     #Check's to confirm it can reach Netbox's Inventory
     if not nr.inventory.hosts: 
-        print(
+        console.print(
             "No devices were loaded. Check the NetBox inventory plugin, "
             "API URL, token, permissions, and inventory configuration."
         )
-        return
+        return 1
 
     # Inspects the tags then proceeds to pass them to the "normalize_tags" task/function.
     for host in nr.inventory.hosts.values():
@@ -75,18 +95,18 @@ def main() -> None:
         F(tag_slugs__contains=TARGET_TAG.casefold())
     )
 
-    print("\n--- Filter results ---")
-    print(f"Target tag: {TARGET_TAG!r}")
-    print(f"Matched devices: {len(targets.inventory.hosts)}")
-    print(f"Device names: {list(targets.inventory.hosts)}")
+    console.print("\n[bold]--- Filter results ---[/]")
+    console.print(f"Target tag: {TARGET_TAG!r}")
+    console.print(f"Matched devices: {len(targets.inventory.hosts)}")
+    console.print(f"Device names: {list(targets.inventory.hosts)}")
 
     #Provides error output for if no devices are assigned to the specified parameter(Tag)
     if not targets.inventory.hosts:
-        print(
+        console.print(
             "\nNo devices matched the tag. Review the raw_tags and "
             "normalized_tags shown above."
         )
-        return
+        return 0
 
     # Build the dated backup directory once for the entire backup run.
     # Result: /networkbackups/<year>/<month>/<day>/
@@ -104,25 +124,47 @@ def main() -> None:
         exist_ok=True,
     )
 
-    print(f"\nOutput directory: {dated_output_dir.resolve()}")
-    print("\n--- Starting configuration backups ---")
+    console.print(f"\nOutput directory: {dated_output_dir.resolve()}")
+    console.print("\n[bold]--- Starting configuration backups ---[/]")
 
     # Collect the running configuration and environment output
     # from each device filtered from NetBox.
-    results = targets.run(
-        name="Back up Cisco running configurations and environment",
-        task=save_device_outputs,
-        output_dir=dated_output_dir,
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]{task.fields[host]}", justify="right"),
+        BarColumn(),
+        TextColumn("{task.completed:.0f}/{task.total:.0f}"),
+        TextColumn("{task.fields[status]}", markup=True),
+        TimeElapsedColumn(),
+        console=console,
+    )
+
+    with progress:
+        progress_tasks = {
+            host_name: progress.add_task(
+                "backup",
+                total=PROGRESS_STEPS,
+                host=host_name,
+                status="[dim]Queued[/]",
+            )
+            for host_name in targets.inventory.hosts
+        }
+
+        results = targets.run(
+            name="Back up Cisco running configurations and environment",
+            task=save_device_outputs,
+            output_dir=dated_output_dir,
+            progress_update=make_progress_updater(progress, progress_tasks),
         )
 
     # This is essential while troubleshooting.
     print_result(results)
 
-    print("\n--- Backup summary ---")
+    console.print("\n[bold]--- Backup summary ---[/]")
 
     for host_name in targets.inventory.hosts:
         if host_name in results.failed_hosts:
-          print(f"[FAILED] {host_name}")
+          console.print(f"[bold red]FAILED[/] {host_name}")
         else:
             config_file = (
                 dated_output_dir
@@ -134,9 +176,34 @@ def main() -> None:
                 / host_name
                 / f"{host_name}_environment.txt")
 
-            print(f"[SAVED] {host_name}")
-            print(f"        Config:      {config_file.resolve()}")
-            print(f"        Environment: {environment_file.resolve()}")
+            console.print(f"[bold green]SAVED[/] {host_name}")
+            console.print(f"        Config:      {config_file.resolve()}")
+            console.print(f"        Environment: {environment_file.resolve()}")
+
+    failed_count = len(results.failed_hosts)
+    successful_count = len(targets.inventory.hosts) - failed_count
+    console.print(
+        f"\nCompleted: [green]{successful_count} successful[/], "
+        f"[red]{failed_count} failed[/]"
+    )
+    return 1 if failed_count else 0
+
+
+def make_progress_updater(
+    progress: Progress,
+    progress_tasks: dict[str, TaskID],
+) -> Callable[[str, int, str], None]:
+    """Create a thread-safe per-host progress callback for Nornir workers."""
+
+    def update(host_name: str, completed: int, status: str) -> None:
+        progress.update(
+            progress_tasks[host_name],
+            completed=completed,
+            status=status,
+            refresh=True,
+        )
+
+    return update
 
 
 def normalize_tags(tags: list[Any]) -> list[str]:
@@ -171,74 +238,88 @@ def normalize_tags(tags: list[Any]) -> list[str]:
 
     return list(set(normalized))
 
-def save_device_outputs(task: Task, output_dir: Path) -> Result:
+def save_device_outputs(
+    task: Task,
+    output_dir: Path,
+    progress_update: Callable[[str, int, str], None],
+) -> Result:
     """
     Retrieve and save the running configuration and environment
     information for a single network device.
     """
 
-    print(
-        f"[{task.host.name}] Connecting to "
-        f"{task.host.hostname} using platform {task.host.platform!r}"
-    )
+    host_name = task.host.name
+
+    def set_progress(completed: int, status: str) -> None:
+        progress_update(host_name, completed, status)
+
+    def failure(message: str, exception: Exception | None = None) -> Result:
+        set_progress(PROGRESS_STEPS, f"[bold red]Failed:[/] {escape(message)}")
+        return Result(
+            host=task.host,
+            failed=True,
+            exception=exception,
+            result=message,
+        )
+
+    set_progress(0, "[cyan]Connecting[/]")
 
     # Retrieve the running configuration.
-    running_config_results = task.run(
-        name="Get running configuration",
-        task=netmiko_send_command,
-        command_string="show running-config",
-        read_timeout=120,
-    )
+    set_progress(1, "[cyan]Collecting configuration[/]")
+    try:
+        running_config_results = task.run(
+            name="Get running configuration",
+            task=netmiko_send_command,
+            command_string="show running-config",
+            read_timeout=120,
+        )
+    except Exception as exc:
+        return failure(f"Connection/configuration error: {exc}", exc)
 
     running_config_result = running_config_results[-1]
 
     if running_config_result.failed:
-        return Result(
-            host=task.host,
-            failed=True,
-            result=(
+        return failure(
+            (
                 "Failed to retrieve running configuration: "
                 f"{running_config_result.exception or running_config_result.result}"
-            ),
+            )
         )
 
     running_config = str(running_config_result.result)
 
     if not running_config.strip():
-        return Result(
-            host=task.host,
-            failed=True,
-            result="The device returned an empty running configuration.",
-        )
+        return failure("The device returned an empty running configuration.")
+
+    set_progress(2, "[cyan]Collecting environment[/]")
 
     # Retrieve the environment information.
-    environment_results = task.run(
-        name="Get environment information",
-        task=netmiko_send_command,
-        command_string="show environment all",
-        read_timeout=120,
-    )
+    try:
+        environment_results = task.run(
+            name="Get environment information",
+            task=netmiko_send_command,
+            command_string="show environment all",
+            read_timeout=120,
+        )
+    except Exception as exc:
+        return failure(f"Environment collection error: {exc}", exc)
 
     environment_result = environment_results[-1]
 
     if environment_result.failed:
-        return Result(
-            host=task.host,
-            failed=True,
-            result=(
+        return failure(
+            (
                 "Failed to retrieve environment information: "
                 f"{environment_result.exception or environment_result.result}"
-            ),
+            )
         )
 
     environment_output = str(environment_result.result)
 
     if not environment_output.strip():
-        return Result(
-            host=task.host,
-            failed=True,
-            result="The device returned empty environment information.",
-        )
+        return failure("The device returned empty environment information.")
+
+    set_progress(3, "[cyan]Environment collected[/]")
 
     # Create the hostname-specific backup directory.
     host_backup_dir = output_dir / task.host.name
@@ -254,6 +335,7 @@ def save_device_outputs(task: Task, output_dir: Path) -> Result:
     )
 
     try:
+        set_progress(4, "[cyan]Saving files[/]")
         host_backup_dir.mkdir(
             parents=True,
             exist_ok=True,
@@ -270,15 +352,15 @@ def save_device_outputs(task: Task, output_dir: Path) -> Result:
         )
 
     except OSError as exc:
-        return Result(
-            host=task.host,
-            failed=True,
-            exception=exc,
-            result=(
+        return failure(
+            (
                 f"Could not write backup files for "
                 f"{task.host.name}: {exc}"
             ),
+            exc,
         )
+
+    set_progress(PROGRESS_STEPS, "[bold green]Complete[/]")
 
     return Result(
         host=task.host,
@@ -292,4 +374,4 @@ def save_device_outputs(task: Task, output_dir: Path) -> Result:
     )
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
