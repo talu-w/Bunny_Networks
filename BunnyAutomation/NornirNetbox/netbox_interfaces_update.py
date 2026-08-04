@@ -43,9 +43,6 @@ logging.basicConfig(
 
 LOGGER = logging.getLogger(__name__)
 
-NETBOX_URL_ENV = "NETBOX_URL"
-NETBOX_TOKEN_ENV = "NETBOX_TOKEN"
-
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -1113,8 +1110,6 @@ def parse_arguments() -> argparse.Namespace:
         description="Collect Cisco interface VLAN state and synchronize it to NetBox."
     )
     parser.add_argument("--config", default="config.yaml", help="Nornir config file")
-    parser.add_argument("--netbox-url", default=os.getenv(NETBOX_URL_ENV))
-    parser.add_argument("--netbox-token", default=os.getenv(NETBOX_TOKEN_ENV))
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -1130,13 +1125,31 @@ def parse_arguments() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_arguments()
-    if not args.collect_only and (not args.netbox_url or not args.netbox_token):
+    netbox_token = os.getenv("NB_TOKEN")
+    if not netbox_token:
         raise SystemExit(
-            "NetBox synchronization requires --netbox-url/--netbox-token or "
-            f"{NETBOX_URL_ENV}/{NETBOX_TOKEN_ENV}. Use --collect-only to skip it."
+            "NB_TOKEN is not set. Export the NetBox API token first: "
+            "export NB_TOKEN='your-token'"
         )
 
-    nr = InitNornir(config_file=args.config)
+    # Override only the token declared under inventory.options in config.yaml.
+    # The URL and all other NetBoxInventory2 settings remain sourced from the
+    # configuration file. This also ensures the inventory plugin uses the same
+    # exported token as the later pynetbox synchronization phase.
+    nr = InitNornir(
+        config_file=args.config,
+        inventory={"options": {"nb_token": netbox_token}},
+    )
+
+    inventory_options = nr.config.inventory.options
+    netbox_url = inventory_options.get("nb_url")
+    if not netbox_url:
+        nr.close_connections()
+        raise SystemExit(
+            f"NetBox URL is missing from {args.config}. Set "
+            "inventory.options.nb_url in the Nornir configuration."
+        )
+
     exit_code = 0
 
     try:
@@ -1175,7 +1188,7 @@ def main() -> int:
             successful_reports.append(report)
 
         if not args.collect_only:
-            nb = pynetbox.api(args.netbox_url, token=args.netbox_token)
+            nb = pynetbox.api(netbox_url, token=netbox_token)
             vlan_cache = build_vlan_cache(nb)
 
             # Deliberately synchronize sequentially: a pynetbox API/session is
