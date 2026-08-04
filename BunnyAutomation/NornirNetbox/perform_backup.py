@@ -49,9 +49,6 @@ def main() -> None:
     nr.inventory.defaults.username = username #Set's username as default vaule for logging across all devices
     nr.inventory.defaults.password = password #Set's password as default value for logigng across all devices
 
-    print("\n--- Inventory loaded from NetBox ---")
-    print(f"Total devices: {len(nr.inventory.hosts)}")
-
     #Check's to confirm it can reach Netbox's Inventory
     if not nr.inventory.hosts: 
         print(
@@ -64,16 +61,7 @@ def main() -> None:
     for host in nr.inventory.hosts.values():
         raw_tags = host.data.get("tags", [])
         normalized_tags = normalize_tags(raw_tags)
-
         host.data["tag_slugs"] = normalized_tags
-
-        print(
-            f"{host.name}: "
-            f"hostname={host.hostname!r}, "
-            f"platform={host.platform!r}, "
-            f"raw_tags={raw_tags!r}, "
-            f"normalized_tags={normalized_tags!r}"
-        )
 
         #Connection options - Configured currently for connecting to legacy SSH/slower devices.
         #Applied to all the objects that are pulled above from nr.inventory.hosts
